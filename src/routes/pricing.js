@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import MCDRCDModule from '../models/MCDRCDModule.js';
+import { getDB } from '../config/database.js';
 
 const router = Router();
 const mcdRcd = new MCDRCDModule();
@@ -374,6 +375,319 @@ router.post('/recalculate-mcd', async (req, res) => {
   } catch (error) {
     console.error('MCD recalculation error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get marketing spend by platform
+router.get('/marketing-spend', async (req, res) => {
+  try {
+    const db = getDB();
+    const { 
+      platform, 
+      period = '30d',
+      groupBy = 'platform' // platform, campaign, week, month
+    } = req.query;
+
+    // Calculate date range based on period
+    const startDate = new Date();
+    switch (period) {
+      case '7d':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '90d':
+        startDate.setDate(startDate.getDate() - 90);
+        break;
+      case '180d':
+        startDate.setDate(startDate.getDate() - 180);
+        break;
+      case 'ytd':
+        startDate.setMonth(0, 1); // January 1st
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      default: // 30d
+        startDate.setDate(startDate.getDate() - 30);
+    }
+
+    // Build match criteria
+    const matchCriteria = {
+      businessId: mcdRcd.config.businessId,
+      date: { $gte: startDate }
+    };
+
+    // Filter by specific platform if provided
+    if (platform && platform !== 'all') {
+      matchCriteria.platform = platform.toLowerCase();
+    }
+
+    let groupFormat;
+    switch (groupBy) {
+      case 'campaign':
+        groupFormat = { 
+          platform: '$platform',
+          campaignName: '$campaignName',
+          campaignId: '$campaignId'
+        };
+        break;
+      case 'week':
+        groupFormat = { 
+          platform: '$platform',
+          week: { $week: '$date' },
+          year: { $year: '$date' }
+        };
+        break;
+      case 'month':
+        groupFormat = { 
+          platform: '$platform',
+          month: { $month: '$date' },
+          year: { $year: '$date' }
+        };
+        break;
+      default: // platform
+        groupFormat = { platform: '$platform' };
+    }
+
+    // Get marketing spend data
+    const marketingSpend = await db.collection('marketingSpend')
+      .aggregate([
+        {
+          $match: matchCriteria
+        },
+        {
+          $group: {
+            _id: groupFormat,
+            totalSpend: { $sum: '$amount' },
+            campaignCount: { $sum: 1 },
+            averageSpend: { $avg: '$amount' },
+            minSpend: { $min: '$amount' },
+            maxSpend: { $max: '$amount' },
+            lastSpendDate: { $max: '$date' },
+            firstSpendDate: { $min: '$date' }
+          }
+        },
+        {
+          $sort: { totalSpend: -1 }
+        }
+      ]).toArray();
+
+    // Get trend data (spend over time)
+    const spendTrend = await db.collection('marketingSpend')
+      .aggregate([
+        {
+          $match: matchCriteria
+        },
+        {
+          $group: {
+            _id: {
+              week: { $week: '$date' },
+              year: { $year: '$date' },
+              platform: '$platform'
+            },
+            weeklySpend: { $sum: '$amount' },
+            weekStart: { $min: '$date' }
+          }
+        },
+        {
+          $sort: { '_id.year': 1, '_id.week': 1 }
+        }
+      ]).toArray();
+
+    // Get platform performance metrics
+    const platformPerformance = [];
+    for (const spend of marketingSpend) {
+      const platformName = spend._id.platform || spend._id;
+      const revenue = await mcdRcd.calculatePlatformRevenue(platformName);
+      const spendAmount = spend.totalSpend;
+      const roi = spendAmount > 0 ? ((revenue - spendAmount) / spendAmount) * 100 : 0;
+
+      platformPerformance.push({
+        platform: platformName,
+        spend: spendAmount,
+        revenue: revenue,
+        roi: roi,
+        romi: spendAmount > 0 ? (revenue / spendAmount) : 0,
+        breakEven: revenue >= spendAmount
+      });
+    }
+
+    res.json({
+      period,
+      dateRange: {
+        start: startDate,
+        end: new Date()
+      },
+      filters: {
+        platform: platform || 'all',
+        groupBy
+      },
+      summary: {
+        totalSpend: marketingSpend.reduce((sum, item) => sum + item.totalSpend, 0),
+        totalCampaigns: marketingSpend.reduce((sum, item) => sum + item.campaignCount, 0),
+        platformCount: marketingSpend.length,
+        averageSpendPerCampaign: marketingSpend.reduce((sum, item) => sum + item.averageSpend, 0) / marketingSpend.length
+      },
+      byPlatform: marketingSpend.map(item => ({
+        platform: item._id.platform || item._id,
+        totalSpend: Math.round(item.totalSpend * 100) / 100,
+        averageSpend: Math.round(item.averageSpend * 100) / 100,
+        minSpend: Math.round(item.minSpend * 100) / 100,
+        maxSpend: Math.round(item.maxSpend * 100) / 100,
+        campaignCount: item.campaignCount,
+        dateRange: {
+          firstSpend: item.firstSpendDate,
+          lastSpend: item.lastSpendDate
+        }
+      })),
+      performance: platformPerformance.map(item => ({
+        platform: item.platform,
+        spend: Math.round(item.spend * 100) / 100,
+        revenue: Math.round(item.revenue * 100) / 100,
+        roi: Math.round(item.roi * 100) / 100,
+        romi: Math.round(item.romi * 100) / 100,
+        breakEven: item.breakEven,
+        efficiency: item.roi > 0 ? 'profitable' : item.roi === 0 ? 'break-even' : 'unprofitable'
+      })),
+      trends: spendTrend.map(item => ({
+        platform: item._id.platform,
+        week: item._id.week,
+        year: item._id.year,
+        spend: Math.round(item.weeklySpend * 100) / 100,
+        weekStart: item.weekStart
+      })),
+      topPerforming: platformPerformance
+        .filter(item => item.spend > 0)
+        .sort((a, b) => b.roi - a.roi)
+        .slice(0, 3)
+        .map(item => ({
+          platform: item.platform,
+          roi: Math.round(item.roi * 100) / 100
+        })),
+      calculatedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Marketing spend analytics error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch marketing spend data',
+      message: error.message 
+    });
+  }
+});
+
+// Get marketing spend for a specific campaign
+router.get('/marketing-spend/campaign/:campaignId', async (req, res) => {
+  try {
+    const db = getDB();
+    const { campaignId } = req.params;
+
+    const campaignSpend = await db.collection('marketingSpend')
+      .aggregate([
+        {
+          $match: {
+            businessId: mcdRcd.config.businessId,
+            campaignId: campaignId
+          }
+        },
+        {
+          $group: {
+            _id: {
+              campaignId: '$campaignId',
+              campaignName: '$campaignName',
+              platform: '$platform'
+            },
+            totalSpend: { $sum: '$amount' },
+            spendEntries: { $sum: 1 },
+            startDate: { $min: '$date' },
+            endDate: { $max: '$date' },
+            averageSpend: { $avg: '$amount' }
+          }
+        }
+      ]).toArray();
+
+    if (!campaignSpend.length) {
+      return res.status(404).json({ 
+        error: 'Campaign not found' 
+      });
+    }
+
+    const campaign = campaignSpend[0];
+    const revenue = await mcdRcd.calculatePlatformRevenue(campaign._id.platform);
+    const spendAmount = campaign.totalSpend;
+    const roi = spendAmount > 0 ? ((revenue - spendAmount) / spendAmount) * 100 : 0;
+
+    res.json({
+      campaign: {
+        id: campaign._id.campaignId,
+        name: campaign._id.campaignName,
+        platform: campaign._id.platform,
+        totalSpend: Math.round(campaign.totalSpend * 100) / 100,
+        spendEntries: campaign.spendEntries,
+        durationDays: campaign.endDate && campaign.startDate ? 
+          Math.ceil((campaign.endDate - campaign.startDate) / (1000 * 60 * 60 * 24)) : 1,
+        averageSpend: Math.round(campaign.averageSpend * 100) / 100,
+        dateRange: {
+          start: campaign.startDate,
+          end: campaign.endDate
+        }
+      },
+      performance: {
+        revenue: Math.round(revenue * 100) / 100,
+        roi: Math.round(roi * 100) / 100,
+        romi: Math.round((revenue / spendAmount) * 100) / 100,
+        breakEven: revenue >= spendAmount
+      }
+    });
+
+  } catch (error) {
+    console.error('Campaign spend error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch campaign data',
+      message: error.message 
+    });
+  }
+});
+
+// Get all available platforms
+router.get('/marketing-spend/platforms', async (req, res) => {
+  try {
+    const db = getDB();
+
+    const platforms = await db.collection('marketingSpend')
+      .aggregate([
+        {
+          $match: {
+            businessId: mcdRcd.config.businessId
+          }
+        },
+        {
+          $group: {
+            _id: '$platform',
+            totalSpend: { $sum: '$amount' },
+            campaignCount: { $sum: 1 },
+            lastUsed: { $max: '$date' }
+          }
+        },
+        {
+          $sort: { totalSpend: -1 }
+        }
+      ]).toArray();
+
+    res.json({
+      platforms: platforms.map(platform => ({
+        name: platform._id,
+        totalSpend: Math.round(platform.totalSpend * 100) / 100,
+        campaignCount: platform.campaignCount,
+        lastUsed: platform.lastUsed,
+        weight: mcdRcd.config.mcd.platformWeights[platform._id] || 1.0
+      })),
+      totalPlatforms: platforms.length
+    });
+
+  } catch (error) {
+    console.error('Platforms error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch platforms',
+      message: error.message 
+    });
   }
 });
 
