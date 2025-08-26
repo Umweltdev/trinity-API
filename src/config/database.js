@@ -4,7 +4,7 @@ let dbConnection = null;
 
 const connectToDatabase = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/mcd-rcd-db';
+    const mongoUri = process.env.MONGO_URL;
     
     await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
