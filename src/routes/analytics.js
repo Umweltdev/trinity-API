@@ -3,6 +3,74 @@ import { getDB } from '../config/database.js';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/analytics/overview:
+ *   get:
+ *     summary: Get business analytics overview
+ *     description: Returns comprehensive business analytics including revenue, customer metrics, and marketing performance
+ *     tags: [Analytics]
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, ytd]
+ *         description: Time period for analytics
+ *         example: 30d
+ *     responses:
+ *       200:
+ *         description: Analytics data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 period:
+ *                   type: string
+ *                 dateRange:
+ *                   type: object
+ *                   properties:
+ *                     start:
+ *                       type: string
+ *                       format: date-time
+ *                     end:
+ *                       type: string
+ *                       format: date-time
+ *                 revenue:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: number
+ *                     transactions:
+ *                       type: integer
+ *                     averageOrderValue:
+ *                       type: number
+ *                 customers:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     new:
+ *                       type: integer
+ *                     growthRate:
+ *                       type: number
+ *                 marketing:
+ *                   type: object
+ *                   properties:
+ *                     totalSpend:
+ *                       type: number
+ *                     campaigns:
+ *                       type: integer
+ *                     roi:
+ *                       type: number
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get basic business analytics
 router.get('/overview', async (req, res) => {
   try {
@@ -122,6 +190,60 @@ router.get('/overview', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/analytics/revenue-trends:
+ *   get:
+ *     summary: Get revenue trends over time
+ *     description: Returns revenue trends grouped by day, week, or month
+ *     tags: [Analytics]
+ *     parameters:
+ *       - in: query
+ *         name: groupBy
+ *         schema:
+ *           type: string
+ *           enum: [day, week, month]
+ *         description: Grouping interval for trends
+ *         example: day
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *         description: Number of days to look back
+ *         example: 30
+ *     responses:
+ *       200:
+ *         description: Revenue trends retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 period:
+ *                   type: string
+ *                 groupBy:
+ *                   type: string
+ *                 trends:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       period:
+ *                         type: object
+ *                       totalRevenue:
+ *                         type: number
+ *                       transactionCount:
+ *                         type: integer
+ *                       date:
+ *                         type: string
+ *                         format: date-time
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get revenue trends over time
 router.get('/revenue-trends', async (req, res) => {
   try {
@@ -189,6 +311,54 @@ router.get('/revenue-trends', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/analytics/customer-segments:
+ *   get:
+ *     summary: Get customer segmentation analytics
+ *     description: Returns customer data segmented by various criteria
+ *     tags: [Analytics]
+ *     responses:
+ *       200:
+ *         description: Customer segments retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 segments:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       segment:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ *                       totalSpend:
+ *                         type: number
+ *                       averageSpend:
+ *                         type: number
+ *                 loyaltyTiers:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       tier:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ *                       totalSpend:
+ *                         type: number
+ *                       averageSpend:
+ *                         type: number
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get customer segmentation analytics
 router.get('/customer-segments', async (req, res) => {
   try {
@@ -249,6 +419,47 @@ router.get('/customer-segments', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/analytics/health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns database health status and available collections
+ *     tags: [Analytics]
+ *     responses:
+ *       200:
+ *         description: Health check successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 collections:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 database:
+ *                   type: string
+ *       500:
+ *         description: Database connection error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 error:
+ *                   type: string
+ */
 // Get simple health check endpoint
 router.get('/health', async (req, res) => {
   try {
