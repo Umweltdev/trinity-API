@@ -5,6 +5,50 @@ import { getDB } from '../config/database.js';
 const router = Router();
 const mcdRcd = new MCDRCDModule();
 
+/**
+ * @swagger
+ * /api/pricing/calculate:
+ *   get:
+ *     summary: Calculate final price with MCD and RCD
+ *     description: Calculates the final price after applying Marketing Cost Displacement and Returning Customer Discount
+ *     tags: [Pricing]
+ *     parameters:
+ *       - in: query
+ *         name: basePrice
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Base price of the product/service
+ *         example: 100.00
+ *       - in: query
+ *         name: email
+ *         schema:
+ *           type: string
+ *         description: Customer email for RCD discount calculation
+ *         example: customer@example.com
+ *       - in: query
+ *         name: productCategory
+ *         schema:
+ *           type: string
+ *           enum: [premium, standard, budget]
+ *         description: Product category for discount weighting
+ *         example: standard
+ *     responses:
+ *       200:
+ *         description: Price calculated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PriceCalculation'
+ *       400:
+ *         description: Bad request - missing basePrice
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Calculate price with MCD and RCD logic
 router.get('/calculate', async (req, res) => {
   try {
@@ -51,6 +95,60 @@ router.get('/calculate', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/marketing-spend:
+ *   post:
+ *     summary: Record marketing spend
+ *     description: Records marketing expenditure for MCD calculations
+ *     tags: [Pricing]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - platform
+ *               - amount
+ *             properties:
+ *               platform:
+ *                 type: string
+ *                 description: Marketing platform (e.g., google, facebook)
+ *                 example: google
+ *               amount:
+ *                 type: number
+ *                 description: Amount spent
+ *                 example: 5000
+ *               campaignName:
+ *                 type: string
+ *                 description: Campaign name
+ *                 example: Summer Sale
+ *               campaignId:
+ *                 type: string
+ *                 description: Campaign identifier
+ *                 example: camp_12345
+ *     responses:
+ *       200:
+ *         description: Marketing spend recorded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 record:
+ *                   type: object
+ *                 currentMCDMultiplier:
+ *                   type: number
+ *       400:
+ *         description: Bad request - missing required fields
+ *       500:
+ *         description: Internal server error
+ */
 // Record marketing spend (new endpoint)
 router.post('/marketing-spend', async (req, res) => {
   try {
@@ -78,6 +176,59 @@ router.post('/marketing-spend', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/transaction:
+ *   post:
+ *     summary: Record a customer transaction
+ *     description: Records a transaction for RCD calculations and customer tracking
+ *     tags: [Pricing]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - amount
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 description: Customer email address
+ *                 example: customer@example.com
+ *               amount:
+ *                 type: number
+ *                 description: Transaction amount
+ *                 example: 150.00
+ *               referralCode:
+ *                 type: string
+ *                 description: Referral code used (if any)
+ *                 example: REF12345
+ *               productIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of product IDs purchased
+ *                 example: ["prod_001", "prod_002"]
+ *               productCategories:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of product categories
+ *                 example: ["electronics", "accessories"]
+ *     responses:
+ *       200:
+ *         description: Transaction recorded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TransactionRecord'
+ *       400:
+ *         description: Bad request - missing required fields
+ *       500:
+ *         description: Internal server error
+ */
 // Record transaction (new endpoint)
 router.post('/transaction', async (req, res) => {
   try {
@@ -111,6 +262,33 @@ router.post('/transaction', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/customer/{email}/discount:
+ *   get:
+ *     summary: Get customer discount details
+ *     description: Retrieves discount eligibility and details for a specific customer
+ *     tags: [Pricing]
+ *     parameters:
+ *       - in: path
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Customer email address
+ *         example: customer@example.com
+ *     responses:
+ *       200:
+ *         description: Customer discount details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/CustomerDiscountInfo'
+ *       400:
+ *         description: Bad request - missing email parameter
+ *       500:
+ *         description: Internal server error
+ */
 // Get customer discount details
 router.get('/customer/:email/discount', async (req, res) => {
   try {
@@ -195,6 +373,36 @@ router.get('/customer/:email/discount', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/customer/{email}/lifetime-value:
+ *   get:
+ *     summary: Get customer lifetime value
+ *     description: Calculates and returns customer lifetime value metrics
+ *     tags: [Pricing]
+ *     parameters:
+ *       - in: path
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Customer email address
+ *         example: customer@example.com
+ *     responses:
+ *       200:
+ *         description: Customer lifetime value calculated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LifetimeValue'
+ *       400:
+ *         description: Bad request - missing email parameter
+ *       404:
+ *         description: Customer not found or no purchase history
+ *       500:
+ *         description: Internal server error
+ */
+
 // Get customer lifetime value
 router.get('/customer/:email/lifetime-value', async (req, res) => {
   try {
@@ -224,6 +432,24 @@ router.get('/customer/:email/lifetime-value', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/analytics/marketing-roi:
+ *   get:
+ *     summary: Get marketing ROI analytics
+ *     description: Retrieves marketing return on investment analytics data
+ *     tags: [Pricing]
+ *     responses:
+ *       200:
+ *         description: Marketing ROI data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MarketingROI'
+ *       500:
+ *         description: Internal server error
+ */
+
 // Get marketing ROI analytics
 router.get('/analytics/marketing-roi', async (req, res) => {
   try {
@@ -241,6 +467,46 @@ router.get('/analytics/marketing-roi', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/simulate:
+ *   get:
+ *     summary: Simulate pricing scenarios
+ *     description: Runs multiple pricing scenarios for comparison and analysis
+ *     tags: [Pricing]
+ *     parameters:
+ *       - in: query
+ *         name: basePrice
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Base price for simulation
+ *         example: 100.00
+ *       - in: query
+ *         name: email
+ *         schema:
+ *           type: string
+ *         description: Customer email for RCD simulation
+ *         example: customer@example.com
+ *       - in: query
+ *         name: productCategory
+ *         schema:
+ *           type: string
+ *           enum: [premium, standard, budget]
+ *         description: Product category for simulation
+ *         example: standard
+ *     responses:
+ *       200:
+ *         description: Pricing simulation completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PriceSimulation'
+ *       400:
+ *         description: Bad request - missing basePrice
+ *       500:
+ *         description: Internal server error
+ */
 // Get price simulation for multiple scenarios
 router.get('/simulate', async (req, res) => {
   try {
@@ -341,6 +607,24 @@ router.get('/simulate', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/mcd-multiplier:
+ *   get:
+ *     summary: Get current MCD multiplier
+ *     description: Retrieves the current Marketing Cost Displacement multiplier
+ *     tags: [Pricing]
+ *     responses:
+ *       200:
+ *         description: MCD multiplier retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MCDMultiplier'
+ *       500:
+ *         description: Internal server error
+ */
+
 // Get current MCD multiplier
 router.get('/mcd-multiplier', async (req, res) => {
   try {
@@ -360,6 +644,24 @@ router.get('/mcd-multiplier', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/recalculate-mcd:
+ *   post:
+ *     summary: Force MCD recalculation
+ *     description: Manually triggers recalculation of the MCD multiplier
+ *     tags: [Pricing]
+ *     responses:
+ *       200:
+ *         description: MCD recalculated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MCDRecalculation'
+ *       500:
+ *         description: Internal server error
+ */
+
 // Force MCD recalculation
 router.post('/recalculate-mcd', async (req, res) => {
   try {
@@ -378,6 +680,44 @@ router.post('/recalculate-mcd', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/marketing-spend:
+ *   get:
+ *     summary: Get marketing spend analytics
+ *     description: Retrieves marketing spend data with filtering and analytics
+ *     tags: [Pricing]
+ *     parameters:
+ *       - in: query
+ *         name: platform
+ *         schema:
+ *           type: string
+ *         description: Filter by specific platform
+ *         example: google
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 180d, ytd]
+ *         description: Time period for analysis
+ *         example: 30d
+ *       - in: query
+ *         name: groupBy
+ *         schema:
+ *           type: string
+ *           enum: [platform, campaign, week, month]
+ *         description: Grouping method for results
+ *         example: platform
+ *     responses:
+ *       200:
+ *         description: Marketing spend data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MarketingSpendAnalytics'
+ *       500:
+ *         description: Internal server error
+ */
 // Get marketing spend by platform
 router.get('/marketing-spend', async (req, res) => {
   try {
@@ -573,6 +913,33 @@ router.get('/marketing-spend', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/marketing-spend/campaign/{campaignId}:
+ *   get:
+ *     summary: Get campaign-specific marketing spend
+ *     description: Retrieves marketing spend data for a specific campaign
+ *     tags: [Pricing]
+ *     parameters:
+ *       - in: path
+ *         name: campaignId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Campaign identifier
+ *         example: camp_12345
+ *     responses:
+ *       200:
+ *         description: Campaign spend data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/CampaignSpend'
+ *       404:
+ *         description: Campaign not found
+ *       500:
+ *         description: Internal server error
+ */
 // Get marketing spend for a specific campaign
 router.get('/marketing-spend/campaign/:campaignId', async (req, res) => {
   try {
@@ -646,6 +1013,23 @@ router.get('/marketing-spend/campaign/:campaignId', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/pricing/marketing-spend/platforms:
+ *   get:
+ *     summary: Get available marketing platforms
+ *     description: Retrieves list of all marketing platforms with spend data
+ *     tags: [Pricing]
+ *     responses:
+ *       200:
+ *         description: Platforms list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PlatformsList'
+ *       500:
+ *         description: Internal server error
+ */
 // Get all available platforms
 router.get('/marketing-spend/platforms', async (req, res) => {
   try {
